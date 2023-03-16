@@ -1,0 +1,247 @@
+<template>
+  <div>
+    <Header/>
+    <div class="main-background div-block">
+      <div class="div-block" id="div-inline">
+        <div class="div-inline">
+          <PictureGraph v-bind:data="data" v-bind:param_r="param_r" v-on:clickOnSVG="clickOnSVG($event)"/>
+        </div>
+        <ArgsBlock class="div-inline" v-model:param_x="param_x" v-model:param_r="param_r" v-model:param_y="param_y"/>
+      </div>
+      <div class="div-block" id="div-buttons">
+        <ButtonsBlock v-bind:buttons="buttons" v-on:goBack="goBack" v-on:submit="submit" v-on:clear="clear"/>
+      </div>
+    </div>
+    <div class="div-block" id="result-table">
+      <ResultTable v-model:data="data"/>
+    </div>
+  </div>
+  <Footer/>
+</template>
+
+<script>
+import Header from "@/components/pcomponents/blocks/Header";
+import PictureGraph from "@/components/pcomponents/graph/PictureGraph";
+import ButtonsBlock from "@/components/pcomponents/blocks/ButtonsBlock";
+import ResultTable from "@/components/pcomponents/table/ResultTable"
+import ArgsBlock from "@/components/pcomponents/blocks/ArgsBlock";
+import Footer from "@/components/pcomponents/blocks/Footer";
+
+let intervalId;
+
+export default {
+  components: {
+    Footer,
+    Header,
+    PictureGraph,
+    ButtonsBlock,
+    ResultTable,
+    ArgsBlock,
+  },
+  name: 'Main',
+  data() {
+    return {
+      param_x: [],
+      param_y: "",
+      param_r: 1,
+      data: new Array(0),
+      buttons: [
+        {msg: 'выйти', command: 'goBack'},
+        {msg: 'результат', command: 'submit'},
+        {msg: 'очистить', command: 'clear'}
+      ],
+    }
+  },
+  created: function () {
+    document.addEventListener('beforeunload', this.handlerClose);
+  },
+  watch: {
+    param_r(val) {
+      this.checkR(val);
+    },
+  },
+  methods: {
+    handleClose() {
+      localStorage.removeItem("par");
+    },
+    goBack() {
+      localStorage.removeItem("par");
+      this.$router.push({name: 'auth-page'});
+    },
+    clickOnSVG() {
+      if (this.checkR(this.param_r)) {
+        this.param_x = (event.offsetX - 100) / 80 * this.param_r;
+        this.param_y = (100 - event.offsetY) / 80 * this.param_r;
+        this.sendRequestWithArgs();
+      } else {
+        this.showError("R должен быть (0,5]")
+      }
+    },
+    sendRequestWithArgs(valX = this.param_x) {
+      const requestOptions = {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("par")},
+        body: JSON.stringify({"x": valX, "y": this.param_y, "r": this.param_r})
+      };
+      const address = "/api/data/add-data";
+      this.sendRequest(address, requestOptions);
+    },
+    sendRequestWithArgsTik(valX = this.param_x) {
+      const requestOptions = {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("par")},
+        body: JSON.stringify({"x": valX, "y": this.param_y.replaceAll(',', '.'), "r": this.param_r})
+      };
+      const address = "/api/data/add-data";
+      this.sendRequest(address, requestOptions);
+    },
+    loadData() {
+      const requestOptions = {
+        method: "GET",
+        headers: {"Authorization": "Bearer " + localStorage.getItem("par")},
+      };
+      const address = "/api/data/get-data";
+      this.sendRequestWithData(address, requestOptions);
+    },
+    clear() {
+      const requestOptions = {
+        method: "DELETE",
+        headers: {"Authorization": "Bearer " + localStorage.getItem("par")},
+      };
+      const address = "/api/data/delete";
+      this.sendRequest(address, requestOptions);
+      this.data = [];
+      this.param_x = -5;
+      this.param_r = 1;
+      document.querySelector(".input-with-check").value = "";
+      document.querySelector(".input-with-check").classList.remove('error-input');
+    },
+    sendRequestWithData(address, requestOptions) {
+      fetch(address, requestOptions)
+          .then(response => {
+            if (response.ok) return response.json();
+            else {
+              return response.text().then(text => {
+                throw new Error(text)
+              });
+            }
+          }).then(data => {
+        this.data = data;
+      }).catch((e) => {
+        this.showError(e);
+      });
+    },
+    sendRequest(address, requestOptions) {
+      fetch(address, requestOptions)
+          .then(response => {
+            if (response.ok) return response;
+            else {
+              return response.text().then(text => {
+                throw new Error(text)
+              });
+            }
+          }).then(() => {
+        this.loadData();
+      }).catch((e) => {
+        this.showError(e.message);
+      });
+    },
+    checkR(r) {
+      const MAX = 5;
+      const MIN = -3;
+      if (!isNaN(r) && parseFloat(r) >= MIN && parseFloat(r) <= MAX)
+        return true;
+      else {
+        this.showError("R должен быть выбран и находиться в пределах (0;5]")
+        return false;
+      }
+    },
+    checkY(y) {
+      const MAX = 3;
+      const MIN = -3;
+      if (!isNaN(y) && parseFloat(y) > MIN && parseFloat(y) < MAX) {
+        document.querySelector('.input-with-check').classList.remove('error-input');
+        return true;
+      } else {
+        document.querySelector('.input-with-check').classList.add('error-input');
+        this.showError("Y должен быть в пределах от -3 до 3");
+        return false;
+      }
+    },
+    checkX(x) {
+      const MAX = 5;
+      const MIN = -3;
+      if (!isNaN(x) && parseFloat(x) >= MIN && parseFloat(x) <= MAX)
+        return true;
+      else {
+        this.showError("X должен быть выбран и находиться в пределах [-3;5]")
+        return false;
+      }
+    },
+    submit() {
+      for (let i = 0; i < this.param_x.length; i++) {
+        if (this.checkX(this.param_x[i]) && this.checkY(this.param_y.replaceAll(',', '.')) && this.checkR(this.param_r))
+          this.sendRequestWithArgsTik(this.param_x[i]);
+      }
+    },
+    showError(text) {
+      this.$notify({
+        group: "error",
+        title: 'Ошибка',
+        text: text,
+        type: 'error'
+      });
+    },
+  },
+  mounted() {
+    intervalId = window.setInterval(function(){
+      this.loadData();
+    }.bind(this), 2000);
+  },
+  unmounted() {
+    clearInterval(intervalId)
+  }
+}
+</script>
+<style>
+#div-inline div {
+  vertical-align: middle;
+  margin: 20px 20px 20px;
+  text-align: center;
+}
+
+.main-background > div:first-child {
+  display: table;
+  margin: 0 auto;
+}
+
+#result-table {
+  overflow-x: auto;
+  height: 300px;
+  margin: 10px 20px;
+}
+
+.div-block {
+  display: block;
+}
+
+.div-inline {
+  display: inline-block;
+}
+
+#div-buttons {
+  padding: 1.5% 1.5% 1.5% 1.5%;
+}
+
+@media (max-width: 1217px) {
+  #div-inline div {
+    margin: 10px 10px 10px;
+  }
+}
+
+@media (max-width: 877px) {
+  #div-inline div {
+    margin: 5px 5px 5px;
+  }
+}
+</style>
